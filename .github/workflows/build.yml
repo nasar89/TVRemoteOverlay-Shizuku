@@ -24,7 +24,7 @@ jobs:
           /opt/gradle-8.2/bin/gradle -p source wrapper --gradle-version=8.2
           chmod +x source/gradlew
 
-      - name: Apply real D-Pad fix
+      - name: Verify D-Pad fix
         run: |
           python3 <<'PY'
           from pathlib import Path
