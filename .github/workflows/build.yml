@@ -24,11 +24,7 @@ jobs:
           /opt/gradle-8.2/bin/gradle -p source wrapper --gradle-version=8.2
           chmod +x source/gradlew
 
-      - name: Fix D-Pad controls
-        run: |
-          sed -i 's#            instance?\.doNavigate(direction)#            instance?.let { service -> when (direction) { View.FOCUS_UP -> service.performGlobalAction(GLOBAL_ACTION_DPAD_UP); View.FOCUS_DOWN -> service.performGlobalAction(GLOBAL_ACTION_DPAD_DOWN); View.FOCUS_LEFT -> service.performGlobalAction(GLOBAL_ACTION_DPAD_LEFT); View.FOCUS_RIGHT -> service.performGlobalAction(GLOBAL_ACTION_DPAD_RIGHT); else -> service.doNavigate(direction) } }#' source/app/src/main/java/com/tvremote/overlay/RemoteAccessibilityService.kt
-          sed -i 's#            instance?\.doClick()#            instance?.performGlobalAction(GLOBAL_ACTION_DPAD_CENTER)#' source/app/src/main/java/com/tvremote/overlay/RemoteAccessibilityService.kt
-
+      
       - name: Build APK
         working-directory: source
         run: ./gradlew assembleDebug
