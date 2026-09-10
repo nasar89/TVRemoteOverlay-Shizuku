@@ -24,7 +24,6 @@ jobs:
           unzip -q /tmp/gradle.zip -d /opt
           /opt/gradle-8.2/bin/gradle wrapper --gradle-version 8.2
           chmod +x gradlew
-
       - name: Modify D-pad buttons
         run: |
           cd source
