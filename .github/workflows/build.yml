@@ -120,4 +120,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: TV-Remote-REAL-DPAD-FIXED
-          path: source/app/build/outputs/apk/debug/app-debug.apko
+          path: source/app/build/outputs/apk/debug/app-debug.apk
