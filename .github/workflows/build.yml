@@ -8,278 +8,60 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download original TV Remote Overlay
-        run: |
-          git clone https://github.com/ManmeetSingh122/D-PadOverlay.git source
+      - name: Get source
+        run: git clone https://github.com/ManmeetSingh122/D-PadOverlay.git source
 
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
+          distribution: temurin
           java-version: '17'
-          distribution: 'temurin'
 
-      - name: Install Gradle
+      - name: Modify D-pad controls
+        working-directory: source
         run: |
-          wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip -O /tmp/gradle.zip
-          unzip -q /tmp/gradle.zip -d /opt
-          /opt/gradle-8.2/bin/gradle wrapper --gradle-version 8.2
-          chmod +x gradlew
-      - name: Modify D-pad buttons
-        run: |
-          cd source
-
-          python3 <<'PY'
+          python3 - <<'PY'
           from pathlib import Path
-
-          p = Path("app/src/main/java/com/tvremote/overlay/OverlayService.kt")
-          s = p.read_text()
-
-          s = s.replace(
-              'setOnClickListener { RemoteAccessibilityService.performClick() }',
-              'setOnClickListener { RemoteAccessibilityService.performClick() }'
-          )
-
-          s = s.replace(
-              'btnUp.setOnClickListener    { RemoteAccessibilityService.navigate(View.FOCUS_UP) }',
-              'btnUp.setOnClickListener    { RemoteAccessibilityService.navigate(View.FOCUS_UP) }'
-          )
-
-          s = s.replace(
-              'btnDown.setOnClickListener  { RemoteAccessibilityService.navigate(View.FOCUS_DOWN) }',
-              'btnDown.setOnClickListener  { RemoteAccessibilityService.navigate(View.FOCUS_DOWN) }'
-          )
-
-          s = s.replace(
-              'btnLeft.setOnClickListener  { RemoteAccessibilityService.navigate(View.FOCUS_LEFT) }',
-              'btnLeft.setOnClickListener  { RemoteAccessibilityService.navigate(View.FOCUS_LEFT) }'
-          )
-
-          s = s.replace(
-              'btnRight.setOnClickListener { RemoteAccessibilityService.navigate(View.FOCUS_RIGHT) }',
-              'btnRight.setOnClickListener { RemoteAccessibilityService.navigate(View.FOCUS_RIGHT) }'
-          )
-
-          p.write_text(s)
 
           p = Path("app/src/main/java/com/tvremote/overlay/RemoteAccessibilityService.kt")
           s = p.read_text()
 
-          old = '''        fun navigate(direction: Int) {
+          s = s.replace(
+              """fun navigate(direction: Int) {
+            instance?.doNavigate(direction)
+        }""",
+              """fun navigate(direction: Int) {
             val service = instance ?: return
             when (direction) {
                 View.FOCUS_UP -> service.performGlobalAction(GLOBAL_ACTION_DPAD_UP)
                 View.FOCUS_DOWN -> service.performGlobalAction(GLOBAL_ACTION_DPAD_DOWN)
                 View.FOCUS_LEFT -> service.performGlobalAction(GLOBAL_ACTION_DPAD_LEFT)
                 View.FOCUS_RIGHT -> service.performGlobalAction(GLOBAL_ACTION_DPAD_RIGHT)
-                else -> service.doNavigate(direction)
             }
-        }'''
+        }"""
+          )
 
-          new = '''        fun navigate(direction: Int) {
-            val service = instance ?: return
-
-            if (android.os.Build.VERSION.SDK_INT >= 33) {
-                when (direction) {
-                    View.FOCUS_UP ->
-                        service.performGlobalAction(GLOBAL_ACTION_DPAD_UP)
-
-                    View.FOCUS_DOWN ->
-                        service.performGlobalAction(GLOBAL_ACTION_DPAD_DOWN)
-
-                    View.FOCUS_LEFT ->
-                        service.performGlobalAction(GLOBAL_ACTION_DPAD_LEFT)
-
-                    View.FOCUS_RIGHT ->
-                        service.performGlobalAction(GLOBAL_ACTION_DPAD_RIGHT)
-
-                    else -> service.doNavigate(direction)
-                }
-            } else {
-                service.doNavigate(direction)
-            }
-        }
-
-        fun performClick() {
-            val service = instance ?: return
-
-            if (android.os.Build.VERSION.SDK_INT >= 33) {
-                service.performGlobalAction(GLOBAL_ACTION_DPAD_CENTER)
-            } else {
-                service.doClick()
-            }
-        }'''
-
-          if old not in s:
-              raise SystemExit("Expected navigation code was not found")
-
-          s = s.replace(old, new)
+          s = s.replace(
+              """fun performClick() {
+            instance?.doClick()
+        }""",
+              """fun performClick() {
+            instance?.performGlobalAction(GLOBAL_ACTION_DPAD_CENTER)
+        }"""
+          )
 
           p.write_text(s)
+          print("D-pad modification complete")
           PY
 
-      - name: Accept Android SDK licenses
-        run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-
-      - name: Install Android SDK
-        run: |
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
-            "platforms;android-34" \
-            "build-tools;34.0.0"
-
       - name: Build APK
+        working-directory: source
         run: |
-          cd source
-          ./gradlew assembleDebug --stacktrace
+          gradle --version
+          gradle assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: TVRemoteOverlay-Real-DPad
-          path: source/app/build/outputs/apk/debug/app-debug.apk          s = s.replace(
-              "dependencies {",
-              """dependencies {
-              implementation 'dev.rikka.shizuku:api:13.1.5'
-              implementation 'dev.rikka.shizuku:provider:13.1.5'"""
-          )
-          p.write_text(s)
-
-          # Add Shizuku permission to manifest
-          p = Path("app/src/main/AndroidManifest.xml")
-          s = p.read_text()
-          marker = '<manifest '
-          insert = '\\n    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />'
-          if 'moe.shizuku.manager.permission.API_V23' not in s:
-              pos = s.find('>', s.find(marker)) + 1
-              s = s[:pos] + insert + s[pos:]
-          p.write_text(s)
-
-          # Create Shizuku command helper
-          helper = Path(
-              "app/src/main/java/com/tvremote/overlay/ShizukuKeyEvent.kt"
-          )
-          helper.write_text(r'''
-          package com.tvremote.overlay
-
-          import android.content.pm.PackageManager
-          import rikka.shizuku.Shizuku
-
-          object ShizukuKeyEvent {
-
-              private const val REQUEST_CODE = 1001
-
-              fun isAvailable(): Boolean {
-                  return try {
-                      Shizuku.pingBinder()
-                  } catch (_: Exception) {
-                      false
-                  }
-              }
-
-              fun hasPermission(): Boolean {
-                  return try {
-                      Shizuku.checkSelfPermission() ==
-                              PackageManager.PERMISSION_GRANTED
-                  } catch (_: Exception) {
-                      false
-                  }
-              }
-
-              fun requestPermission() {
-                  try {
-                      if (isAvailable() && !hasPermission()) {
-                          Shizuku.requestPermission(REQUEST_CODE)
-                      }
-                  } catch (_: Exception) {
-                  }
-              }
-
-              fun send(keyCode: Int): Boolean {
-                  return try {
-                      if (!isAvailable() || !hasPermission()) return false
-
-                      val process = Shizuku.newProcess(
-                          arrayOf("input", "keyevent", keyCode.toString()),
-                          null,
-                          null
-                      )
-
-                      process.waitFor()
-                      process.exitValue() == 0
-                  } catch (_: Exception) {
-                      false
-                  }
-              }
-          }
-          ''')
-
-          # Replace D-pad button actions
-          p = Path(
-              "app/src/main/java/com/tvremote/overlay/OverlayService.kt"
-          )
-          s = p.read_text()
-
-          s = s.replace(
-              'setOnClickListener { RemoteAccessibilityService.performClick() }',
-              'setOnClickListener { ShizukuKeyEvent.send(23) }'
-          )
-
-          s = s.replace(
-              'btnUp.setOnClickListener    { RemoteAccessibilityService.navigate(View.FOCUS_UP) }',
-              'btnUp.setOnClickListener    { ShizukuKeyEvent.send(19) }'
-          )
-
-          s = s.replace(
-              'btnDown.setOnClickListener  { RemoteAccessibilityService.navigate(View.FOCUS_DOWN) }',
-              'btnDown.setOnClickListener  { ShizukuKeyEvent.send(20) }'
-          )
-
-          s = s.replace(
-              'btnLeft.setOnClickListener  { RemoteAccessibilityService.navigate(View.FOCUS_LEFT) }',
-              'btnLeft.setOnClickListener  { ShizukuKeyEvent.send(21) }'
-          )
-
-          s = s.replace(
-              'btnRight.setOnClickListener { RemoteAccessibilityService.navigate(View.FOCUS_RIGHT) }',
-              'btnRight.setOnClickListener { ShizukuKeyEvent.send(22) }'
-          )
-
-          p.write_text(s)
-
-          # Ask for Shizuku permission when the app opens
-          p = Path(
-              "app/src/main/java/com/tvremote/overlay/MainActivity.kt"
-          )
-          s = p.read_text()
-
-          if 'ShizukuKeyEvent.requestPermission()' not in s:
-              s = s.replace(
-                  'setupClickListeners()',
-                  '''setupClickListeners()
-                  ShizukuKeyEvent.requestPermission()''',
-                  1
-              )
-
-          p.write_text(s)
-          PY
-
-      - name: Accept Android SDK licenses
-        run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-
-      - name: Install Android SDK
-        run: |
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
-            "platforms;android-34" \
-            "build-tools;34.0.0"
-
-      - name: Build APK
-        run: |
-          cd source
-          ./gradlew assembleDebug --stacktrace
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: TVRemoteOverlay-Shizuku-DPad
           path: source/app/build/outputs/apk/debug/app-debug.apk
