@@ -1,4 +1,4 @@
-name: Build Shizuku D-Pad APK
+name: Build Real D-Pad APK
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download original project
+      - name: Download original TV Remote Overlay
         run: |
           git clone https://github.com/ManmeetSingh122/D-PadOverlay.git source
 
@@ -21,20 +21,123 @@ jobs:
       - name: Install Gradle
         run: |
           wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip -O /tmp/gradle.zip
-          unzip -q /tmp/gradle.zip -d /opt/
-          cd source
-          /opt/gradle-8.2/bin/gradle wrapper --gradle-version=8.2 --distribution-type=bin
+          unzip -q /tmp/gradle.zip -d /opt
+          /opt/gradle-8.2/bin/gradle wrapper --gradle-version 8.2
           chmod +x gradlew
 
-      - name: Modify app for Shizuku D-Pad
+      - name: Modify D-pad buttons
         run: |
           cd source
 
           python3 <<'PY'
           from pathlib import Path
 
-          # Add Shizuku dependencies
-          p = Path("app/build.gradle")
+          p = Path("app/src/main/java/com/tvremote/overlay/OverlayService.kt")
+          s = p.read_text()
+
+          s = s.replace(
+              'setOnClickListener { RemoteAccessibilityService.performClick() }',
+              'setOnClickListener { RemoteAccessibilityService.performClick() }'
+          )
+
+          s = s.replace(
+              'btnUp.setOnClickListener    { RemoteAccessibilityService.navigate(View.FOCUS_UP) }',
+              'btnUp.setOnClickListener    { RemoteAccessibilityService.navigate(View.FOCUS_UP) }'
+          )
+
+          s = s.replace(
+              'btnDown.setOnClickListener  { RemoteAccessibilityService.navigate(View.FOCUS_DOWN) }',
+              'btnDown.setOnClickListener  { RemoteAccessibilityService.navigate(View.FOCUS_DOWN) }'
+          )
+
+          s = s.replace(
+              'btnLeft.setOnClickListener  { RemoteAccessibilityService.navigate(View.FOCUS_LEFT) }',
+              'btnLeft.setOnClickListener  { RemoteAccessibilityService.navigate(View.FOCUS_LEFT) }'
+          )
+
+          s = s.replace(
+              'btnRight.setOnClickListener { RemoteAccessibilityService.navigate(View.FOCUS_RIGHT) }',
+              'btnRight.setOnClickListener { RemoteAccessibilityService.navigate(View.FOCUS_RIGHT) }'
+          )
+
+          p.write_text(s)
+
+          p = Path("app/src/main/java/com/tvremote/overlay/RemoteAccessibilityService.kt")
+          s = p.read_text()
+
+          old = '''        fun navigate(direction: Int) {
+            val service = instance ?: return
+            when (direction) {
+                View.FOCUS_UP -> service.performGlobalAction(GLOBAL_ACTION_DPAD_UP)
+                View.FOCUS_DOWN -> service.performGlobalAction(GLOBAL_ACTION_DPAD_DOWN)
+                View.FOCUS_LEFT -> service.performGlobalAction(GLOBAL_ACTION_DPAD_LEFT)
+                View.FOCUS_RIGHT -> service.performGlobalAction(GLOBAL_ACTION_DPAD_RIGHT)
+                else -> service.doNavigate(direction)
+            }
+        }'''
+
+          new = '''        fun navigate(direction: Int) {
+            val service = instance ?: return
+
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                when (direction) {
+                    View.FOCUS_UP ->
+                        service.performGlobalAction(GLOBAL_ACTION_DPAD_UP)
+
+                    View.FOCUS_DOWN ->
+                        service.performGlobalAction(GLOBAL_ACTION_DPAD_DOWN)
+
+                    View.FOCUS_LEFT ->
+                        service.performGlobalAction(GLOBAL_ACTION_DPAD_LEFT)
+
+                    View.FOCUS_RIGHT ->
+                        service.performGlobalAction(GLOBAL_ACTION_DPAD_RIGHT)
+
+                    else -> service.doNavigate(direction)
+                }
+            } else {
+                service.doNavigate(direction)
+            }
+        }
+
+        fun performClick() {
+            val service = instance ?: return
+
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                service.performGlobalAction(GLOBAL_ACTION_DPAD_CENTER)
+            } else {
+                service.doClick()
+            }
+        }'''
+
+          if old not in s:
+              raise SystemExit("Expected navigation code was not found")
+
+          s = s.replace(old, new)
+
+          p.write_text(s)
+          PY
+
+      - name: Accept Android SDK licenses
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+      - name: Install Android SDK
+        run: |
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "platforms;android-34" \
+            "build-tools;34.0.0"
+
+      - name: Build APK
+        run: |
+          cd source
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TVRemoteOverlay-Real-DPad
+          path: source/app/build/outputs/apk/debug/app-debug.apk          p = Path("app/build.gradle")
           s = p.read_text()
           s = s.replace(
               "dependencies {",
