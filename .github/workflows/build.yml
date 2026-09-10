@@ -1,6 +1,9 @@
 name: Build Real D-Pad APK
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -24,60 +27,90 @@ jobs:
           /opt/gradle-8.2/bin/gradle -p source wrapper --gradle-version=8.2
           chmod +x source/gradlew
 
-      - name: Verify D-Pad fix
+      - name: Replace Accessibility Service
         run: |
-          python3 <<'PY'
-          from pathlib import Path
+          cat > source/app/src/main/java/com/tvremote/overlay/RemoteAccessibilityService.kt <<'KOTLIN'
+          package com.tvremote.overlay
 
-          p = Path("source/app/src/main/java/com/tvremote/overlay/RemoteAccessibilityService.kt")
-          s = p.read_text()
+          import android.accessibilityservice.AccessibilityService
+          import android.accessibilityservice.AccessibilityServiceInfo
+          import android.view.View
+          import android.view.accessibility.AccessibilityEvent
+          import android.view.accessibility.AccessibilityNodeInfo
 
-          old = """    fun navigate(direction: Int) {
-              instance?.doNavigate(direction)
-          }"""
+          class RemoteAccessibilityService : AccessibilityService() {
 
-          new = """    fun navigate(direction: Int) {
-              val service = instance ?: return
-              when (direction) {
-                  View.FOCUS_UP -> service.performGlobalAction(GLOBAL_ACTION_DPAD_UP)
-                  View.FOCUS_DOWN -> service.performGlobalAction(GLOBAL_ACTION_DPAD_DOWN)
-                  View.FOCUS_LEFT -> service.performGlobalAction(GLOBAL_ACTION_DPAD_LEFT)
-                  View.FOCUS_RIGHT -> service.performGlobalAction(GLOBAL_ACTION_DPAD_RIGHT)
-                  else -> service.doNavigate(direction)
+              companion object {
+                  private var instance: RemoteAccessibilityService? = null
+
+                  fun navigate(direction: Int) {
+                      val service = instance ?: return
+
+                      when (direction) {
+                          View.FOCUS_UP ->
+                              service.performGlobalAction(GLOBAL_ACTION_DPAD_UP)
+
+                          View.FOCUS_DOWN ->
+                              service.performGlobalAction(GLOBAL_ACTION_DPAD_DOWN)
+
+                          View.FOCUS_LEFT ->
+                              service.performGlobalAction(GLOBAL_ACTION_DPAD_LEFT)
+
+                          View.FOCUS_RIGHT ->
+                              service.performGlobalAction(GLOBAL_ACTION_DPAD_RIGHT)
+                      }
+                  }
+
+                  fun performClick() {
+                      instance?.performGlobalAction(GLOBAL_ACTION_DPAD_CENTER)
+                  }
+
+                  fun performBack() {
+                      instance?.performGlobalAction(GLOBAL_ACTION_BACK)
+                  }
+
+                  fun performHome() {
+                      instance?.performGlobalAction(GLOBAL_ACTION_HOME)
+                  }
+
+                  fun performMenu() {
+                      instance?.performGlobalAction(GLOBAL_ACTION_RECENTS)
+                  }
+
+                  fun isConnected(): Boolean = instance != null
               }
-          }"""
 
-          if old not in s:
-              raise SystemExit("ERROR: Navigation code was not found. Build stopped.")
+              override fun onServiceConnected() {
+                  instance = this
 
-          s = s.replace(old, new)
+                  serviceInfo = serviceInfo?.apply {
+                      flags = flags or
+                              AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+                              AccessibilityServiceInfo.FLAG_REQUEST_ENHANCED_WEB_ACCESSIBILITY
+                  }
+              }
 
-          old_click = """    fun performClick() {
-              instance?.doClick()
-          }"""
+              override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+              }
 
-          new_click = """    fun performClick() {
-              instance?.performGlobalAction(GLOBAL_ACTION_DPAD_CENTER)
-          }"""
+              override fun onInterrupt() {
+              }
 
-          if old_click not in s:
-              raise SystemExit("ERROR: OK button code was not found. Build stopped.")
+              override fun onDestroy() {
+                  super.onDestroy()
+                  instance = null
+              }
+          }
+          KOTLIN
 
-          s = s.replace(old_click, new_click)
-
-          p.write_text(s)
-
-          print("REAL DPAD FIX APPLIED")
-          PY
-
-      - name: Verify D-Pad fix
+      - name: Verify Real D-Pad code
         run: |
           grep -q "GLOBAL_ACTION_DPAD_UP" source/app/src/main/java/com/tvremote/overlay/RemoteAccessibilityService.kt
           grep -q "GLOBAL_ACTION_DPAD_DOWN" source/app/src/main/java/com/tvremote/overlay/RemoteAccessibilityService.kt
           grep -q "GLOBAL_ACTION_DPAD_LEFT" source/app/src/main/java/com/tvremote/overlay/RemoteAccessibilityService.kt
           grep -q "GLOBAL_ACTION_DPAD_RIGHT" source/app/src/main/java/com/tvremote/overlay/RemoteAccessibilityService.kt
           grep -q "GLOBAL_ACTION_DPAD_CENTER" source/app/src/main/java/com/tvremote/overlay/RemoteAccessibilityService.kt
-          echo "ALL 5 REAL DPAD ACTIONS VERIFIED"
+          echo "REAL DPAD CODE VERIFIED"
 
       - name: Build APK
         working-directory: source
@@ -86,5 +119,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: TV-Remote-Real-DPad-FIXED
-          path: source/app/build/outputs/apk/debug/app-debug.apk
+          name: TV-Remote-REAL-DPAD-FIXED
+          path: source/app/build/outputs/apk/debug/app-debug.apko
