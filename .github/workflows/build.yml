@@ -17,7 +17,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Modify D-pad controls
+      - name: Install Gradle
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip
+          unzip -q gradle-8.2-bin.zip
+          ./gradle-8.2/bin/gradle -p source wrapper --gradle-version 8.2
+
+      - name: Modify D-Pad controls
         working-directory: source
         run: |
           python3 - <<'PY'
@@ -28,13 +34,43 @@ jobs:
 
           s = s.replace(
               """fun navigate(direction: Int) {
-            instance?.doNavigate(direction)
-        }""",
+              instance?.doNavigate(direction)
+          }""",
               """fun navigate(direction: Int) {
-            val service = instance ?: return
-            when (direction) {
-                View.FOCUS_UP -> service.performGlobalAction(GLOBAL_ACTION_DPAD_UP)
-                View.FOCUS_DOWN -> service.performGlobalAction(GLOBAL_ACTION_DPAD_DOWN)
+              val service = instance ?: return
+              when (direction) {
+                  View.FOCUS_UP -> service.performGlobalAction(GLOBAL_ACTION_DPAD_UP)
+                  View.FOCUS_DOWN -> service.performGlobalAction(GLOBAL_ACTION_DPAD_DOWN)
+                  View.FOCUS_LEFT -> service.performGlobalAction(GLOBAL_ACTION_DPAD_LEFT)
+                  View.FOCUS_RIGHT -> service.performGlobalAction(GLOBAL_ACTION_DPAD_RIGHT)
+                  else -> service.doNavigate(direction)
+              }
+          }"""
+          )
+
+          s = s.replace(
+              """fun performClick() {
+              instance?.doClick()
+          }""",
+              """fun performClick() {
+              instance?.performGlobalAction(GLOBAL_ACTION_DPAD_CENTER)
+          }"""
+          )
+
+          p.write_text(s)
+          PY
+
+      - name: Build APK
+        working-directory: source
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TV-Remote-Real-DPad-APK
+          path: source/app/build/outputs/apk/debug/*.apk                View.FOCUS_DOWN -> service.performGlobalAction(GLOBAL_ACTION_DPAD_DOWN)
                 View.FOCUS_LEFT -> service.performGlobalAction(GLOBAL_ACTION_DPAD_LEFT)
                 View.FOCUS_RIGHT -> service.performGlobalAction(GLOBAL_ACTION_DPAD_RIGHT)
             }
