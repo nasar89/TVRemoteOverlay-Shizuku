@@ -14,90 +14,45 @@ jobs:
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
           java-version: '17'
+          distribution: temurin
+
+      - name: Install Android SDK
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
       - name: Install Gradle
         run: |
-          wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip
-          unzip -q gradle-8.2-bin.zip
-          ./gradle-8.2/bin/gradle -p source wrapper --gradle-version 8.2
+          wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip -O /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /opt
+          /opt/gradle-8.2/bin/gradle -p source wrapper --gradle-version=8.2
+          chmod +x source/gradlew
 
-      - name: Modify D-Pad controls
-        working-directory: source
+      - name: Change D-Pad buttons
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path("app/src/main/java/com/tvremote/overlay/RemoteAccessibilityService.kt")
-          s = p.read_text()
-
-          s = s.replace(
-              """fun navigate(direction: Int) {
-              instance?.doNavigate(direction)
-          }""",
-              """fun navigate(direction: Int) {
-              val service = instance ?: return
-              when (direction) {
-                  View.FOCUS_UP -> service.performGlobalAction(GLOBAL_ACTION_DPAD_UP)
-                  View.FOCUS_DOWN -> service.performGlobalAction(GLOBAL_ACTION_DPAD_DOWN)
-                  View.FOCUS_LEFT -> service.performGlobalAction(GLOBAL_ACTION_DPAD_LEFT)
-                  View.FOCUS_RIGHT -> service.performGlobalAction(GLOBAL_ACTION_DPAD_RIGHT)
-                  else -> service.doNavigate(direction)
-              }
-          }"""
-          )
-
-          s = s.replace(
-              """fun performClick() {
-              instance?.doClick()
-          }""",
-              """fun performClick() {
-              instance?.performGlobalAction(GLOBAL_ACTION_DPAD_CENTER)
-          }"""
-          )
-
-          p.write_text(s)
-          PY
+          sed -i '36,43c\
+          fun navigate(direction: Int) {\
+              val service = instance ?: return\
+              when (direction) {\
+                  View.FOCUS_UP -> service.performGlobalAction(GLOBAL_ACTION_DPAD_UP)\
+                  View.FOCUS_DOWN -> service.performGlobalAction(GLOBAL_ACTION_DPAD_DOWN)\
+                  View.FOCUS_LEFT -> service.performGlobalAction(GLOBAL_ACTION_DPAD_LEFT)\
+                  View.FOCUS_RIGHT -> service.performGlobalAction(GLOBAL_ACTION_DPAD_RIGHT)\
+                  else -> service.doNavigate(direction)\
+              }\
+          }\
+\
+          fun performClick() {\
+              instance?.performGlobalAction(GLOBAL_ACTION_DPAD_CENTER)\
+          }' source/app/src/main/java/com/tvremote/overlay/RemoteAccessibilityService.kt
 
       - name: Build APK
         working-directory: source
-        run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug
+        run: ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: TV-Remote-Real-DPad-APK
-          path: source/app/build/outputs/apk/debug/*.apk                View.FOCUS_DOWN -> service.performGlobalAction(GLOBAL_ACTION_DPAD_DOWN)
-                View.FOCUS_LEFT -> service.performGlobalAction(GLOBAL_ACTION_DPAD_LEFT)
-                View.FOCUS_RIGHT -> service.performGlobalAction(GLOBAL_ACTION_DPAD_RIGHT)
-            }
-        }"""
-          )
-
-          s = s.replace(
-              """fun performClick() {
-            instance?.doClick()
-        }""",
-              """fun performClick() {
-            instance?.performGlobalAction(GLOBAL_ACTION_DPAD_CENTER)
-        }"""
-          )
-
-          p.write_text(s)
-          print("D-pad modification complete")
-          PY
-
-      - name: Build APK
-        working-directory: source
-        run: |
-          gradle --version
-          gradle assembleDebug
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: TVRemoteOverlay-Real-DPad
           path: source/app/build/outputs/apk/debug/app-debug.apk
